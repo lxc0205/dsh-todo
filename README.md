@@ -27,7 +27,7 @@ plugin_manager install_bundle({ action: 'install_bundle', target: '/path/to/dsh-
 
 ## 数据存储
 
-任务数据保存在浏览器 `localStorage`（键：`dsh.weekly-planner.tasks.v2`）。仓库中的 `tasks.json` 是空示例文件，插件不预置任何任务，也不会把浏览器数据写回该文件。
+任务数据保存在浏览器 `localStorage`（键：`dsh.weekly-planner.tasks.v2`）。`tasks.json` 是随仓库提供的初始/迁移数据快照；插件首次运行时会用它作为种子数据，之后的修改保存在浏览器本地，不会自动写回 `tasks.json`。
 
 ## 目录结构
 
@@ -38,7 +38,7 @@ plugin_manager install_bundle({ action: 'install_bundle', target: '/path/to/dsh-
 - `locale/` — 中英文文案
 - `docs/` — 详情预览图
 - `icon.svg` — 插件图标
-- `tasks.json` — 空的任务数据示例文件
+- `tasks.json` — 迁移后的任务数据快照
 
 ## 许可证
 

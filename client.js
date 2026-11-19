@@ -7,7 +7,36 @@ window.__ModuleLoader__.load({
     const PANEL_ID = 'weekly-planner-panel';
     const STORAGE_KEY = 'dsh.weekly-planner.tasks.v2';
     const SEED_TASKS = [];
-    const TASKS_JSON_PATH = 'E:\\dsh\\dsh-todo-from-github\\tasks.json';
+    const TASKS_JSON_PATH = 'tasks.json'; // Set an absolute path locally to use the reveal button.
+
+    const LIGHT = {
+      page: '#ffffff',
+      surface: '#f3f6fb',
+      surfaceAlt: '#e8eef7',
+      border: '#ccd6e4',
+      borderStrong: '#9fb0c6',
+      text: '#1f2937',
+      muted: '#566273',
+      success: '#15803d',
+      warn: '#b45309',
+      brand: '#2563eb',
+      onBrand: '#ffffff',
+      today: '#2563eb',
+    };
+    const DARK = {
+      page: 'var(--dsw-alias-bg-base)',
+      surface: 'var(--dsw-alias-bg-layer-1)',
+      surfaceAlt: 'var(--dsw-alias-bg-layer-2)',
+      border: 'var(--dsw-alias-border-l1)',
+      borderStrong: 'var(--dsw-alias-border-l2)',
+      text: 'var(--dsw-alias-label-primary)',
+      muted: 'var(--dsw-alias-label-secondary)',
+      success: 'var(--dsw-alias-state-success-primary)',
+      warn: 'var(--dsw-alias-state-warn-primary)',
+      brand: 'var(--dsw-alias-brand-primary)',
+      onBrand: 'var(--dsw-alias-bg-base)',
+      today: '#2563eb',
+    };
 
     const dict = {
       zh: {
@@ -128,7 +157,7 @@ window.__ModuleLoader__.load({
     }
 
     return {
-      inject: ['slots', 'locale', 'layout', 'remote', 'remote.session'],
+      inject: ['slots', 'locale', 'layout', 'remote', 'remote.session', 'theme'],
       apply(ctx) {
         ctx.effect(function () {
           return ctx.locale.register(NS, dict);
@@ -165,6 +194,20 @@ window.__ModuleLoader__.load({
             return startOfWeek(new Date());
           });
           const scrollRef = React.useRef(null);
+          const [isLight, setIsLight] = React.useState(function () {
+            const theme = ctx.theme;
+            const snap = theme && typeof theme.getTheme === 'function' ? theme.getTheme() : null;
+            return !!(snap && snap.active && snap.active.colorScheme === 'light');
+          });
+          React.useEffect(function () {
+            if (!ctx.theme || typeof ctx.theme.getTheme !== 'function') return undefined;
+            function syncTheme(snap) {
+              setIsLight(!!(snap && snap.active && snap.active.colorScheme === 'light'));
+            }
+            syncTheme(ctx.theme.getTheme());
+            if (typeof ctx.on !== 'function') return undefined;
+            return ctx.on('theme/change', syncTheme);
+          }, []);
 
           React.useEffect(function () {
             function parseKey(key) {
@@ -293,12 +336,13 @@ window.__ModuleLoader__.load({
             }
           }
 
+          const c = isLight ? LIGHT : DARK;
           const s = {
             root: {
               boxSizing: 'border-box', width: '100%', height: 'auto', minHeight: '100%', overflow: 'auto',
               display: 'flex', flexDirection: 'column', transform: 'translateY(-32px)',
-              padding: '40px 36px 16px', background: 'var(--dsw-alias-bg-base)',
-              color: 'var(--dsw-alias-label-primary)', fontFamily: 'inherit',
+              padding: '40px 36px 16px', background: c.page,
+              color: c.text, fontFamily: 'inherit',
             },
             header: {
               flex: 'none', marginBottom: 20, minHeight: 120,
@@ -309,9 +353,9 @@ window.__ModuleLoader__.load({
             nav: { display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' },
             btn: {
               cursor: 'pointer', padding: '7px 12px', borderRadius: 8, fontSize: 13,
-              border: '1px solid var(--dsw-alias-border-l1)',
-              background: 'var(--dsw-alias-bg-layer-1)',
-              color: 'var(--dsw-alias-label-primary)',
+              border: '1px solid ' + c.border,
+              background: c.surfaceAlt,
+              color: c.text,
             },
             jsonBtn: {
               cursor: 'pointer', padding: '10px 18px', borderRadius: 8, fontSize: 14,
@@ -322,7 +366,7 @@ window.__ModuleLoader__.load({
             dayStat: { display: 'flex', gap: 3, fontSize: 12, fontWeight: 600 },
             legend: {
               marginBottom: 20, fontSize: 12, textAlign: 'right',
-              color: 'var(--dsw-alias-label-secondary)',
+              color: c.muted,
             },
             grid: {
               display: 'grid', gridTemplateColumns: 'repeat(7, minmax(300px, 1fr))',
@@ -331,63 +375,63 @@ window.__ModuleLoader__.load({
             col: {
               boxSizing: 'border-box', height: 360, minHeight: 360, maxHeight: 360,
               padding: 12, borderRadius: 12,
-              border: '1px solid var(--dsw-alias-border-l1)',
-              borderTop: '3px solid var(--dsw-alias-border-l2)',
-              background: 'var(--dsw-alias-bg-layer-1)',
+              border: '1px solid ' + c.border,
+              borderTop: '3px solid ' + c.borderStrong,
+              background: c.surface,
               display: 'flex', flexDirection: 'column', overflow: 'hidden',
             },
-            colToday: { borderTopColor: '#2563eb' },
+            colToday: { borderTopColor: c.today },
             colHead: {
               display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between',
               gap: 6, marginBottom: 10,
             },
-            dayName: { fontSize: 12, color: 'var(--dsw-alias-label-secondary)' },
+            dayName: { fontSize: 12, color: c.muted },
             todayDot: {
-              width: 6, height: 6, borderRadius: '50%', background: '#2563eb',
+              width: 6, height: 6, borderRadius: '50%', background: c.today,
               display: 'inline-block', flex: 'none',
             },
-            dateNum: { fontSize: 16, fontWeight: 600, color: 'var(--dsw-alias-label-primary)' },
-            dayCount: { fontSize: 11, color: 'var(--dsw-alias-label-secondary)' },
+            dateNum: { fontSize: 16, fontWeight: 600, color: c.text },
+            dayCount: { fontSize: 11, color: c.muted },
             list: {
               flex: '1 1 auto', display: 'flex', flexDirection: 'column', gap: 8,
               minHeight: 0, maxHeight: 240, overflowY: 'auto', paddingRight: 2,
             },
-            empty: { fontSize: 12, color: 'var(--dsw-alias-label-secondary)', padding: '12px 0' },
+            empty: { fontSize: 12, color: c.muted, padding: '12px 0' },
             task: {
               display: 'flex', alignItems: 'flex-start', gap: 8, padding: '8px',
-              borderRadius: 8, border: '1px solid var(--dsw-alias-border-l1)',
-              background: 'var(--dsw-alias-bg-layer-2)',
+              borderRadius: 8, border: '1px solid ' + c.border,
+              background: c.surfaceAlt,
             },
             taskTitle: { flex: 1, minWidth: 0, fontSize: 13, lineHeight: 1.4, wordBreak: 'break-word' },
-            taskTitleDone: { textDecoration: 'line-through', color: 'var(--dsw-alias-label-secondary)' },
+            taskTitleDone: { textDecoration: 'line-through', color: c.muted },
             badge: {
               display: 'inline-block', marginTop: 4, padding: '1px 6px', borderRadius: 6,
-              fontSize: 10, border: '1px solid var(--dsw-alias-border-l2)',
-              background: 'var(--dsw-alias-bg-layer-1)',
-              color: 'var(--dsw-alias-state-warn-primary)',
+              fontSize: 10, border: '1px solid ' + c.borderStrong,
+              background: c.surface,
+              color: c.warn,
             },
             delBtn: {
               cursor: 'pointer', flex: 'none', width: 26, height: 24, padding: 0,
               display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 6,
-              border: '1px solid var(--dsw-alias-border-l1)',
-              background: 'var(--dsw-alias-bg-layer-1)',
-              color: 'var(--dsw-alias-label-secondary)',
+              border: '1px solid ' + c.border,
+              background: c.surface,
+              color: c.muted,
             },
             addRow: { display: 'flex', gap: 6, marginTop: 10 },
             pastHint: {
               marginTop: 10, fontSize: 11, lineHeight: 1.4,
-              color: 'var(--dsw-alias-label-secondary)',
+              color: c.muted,
             },
             input: {
               flex: 1, minWidth: 0, boxSizing: 'border-box', padding: '7px 8px',
-              borderRadius: 7, border: '1px solid var(--dsw-alias-border-l1)',
-              background: 'var(--dsw-alias-bg-layer-2)',
-              color: 'var(--dsw-alias-label-primary)', fontSize: 12, outline: 'none',
+              borderRadius: 7, border: '1px solid ' + c.border,
+              background: c.surfaceAlt,
+              color: c.text, fontSize: 12, outline: 'none',
             },
             addBtn: {
               cursor: 'pointer', flex: 'none', padding: '0 10px', borderRadius: 7,
               border: 'none', fontSize: 14, fontWeight: 600,
-              background: 'var(--dsw-alias-brand-primary)', color: 'var(--dsw-alias-bg-base)',
+              background: c.brand, color: c.onBrand,
             },
             footer: {
               display: 'flex', alignItems: 'center', justifyContent: 'flex-end',
@@ -395,8 +439,8 @@ window.__ModuleLoader__.load({
             },
             btnPrimary: {
               cursor: 'pointer', padding: '7px 14px', borderRadius: 8, fontSize: 13,
-              border: 'none', background: 'var(--dsw-alias-brand-primary)',
-              color: 'var(--dsw-alias-bg-base)',
+              border: 'none', background: c.brand,
+              color: c.onBrand,
             },
           };
 
@@ -422,11 +466,11 @@ window.__ModuleLoader__.load({
                   style: s.dayStat,
                   title: t('done') + ' / ' + t('undone') + ' / ' + t('total'),
                 },
-                  h('span', { style: { color: 'var(--dsw-alias-state-success-primary)' } }, String(dayDone)),
-                  h('span', { style: { color: 'var(--dsw-alias-label-secondary)' } }, '/'),
-                  h('span', { style: { color: 'var(--dsw-alias-state-warn-primary)' } }, String(list.length - dayDone)),
-                  h('span', { style: { color: 'var(--dsw-alias-label-secondary)' } }, '/'),
-                  h('span', { style: { color: 'var(--dsw-alias-label-primary)' } }, String(list.length)),
+                  h('span', { style: { color: c.success } }, String(dayDone)),
+                  h('span', { style: { color: c.muted } }, '/'),
+                  h('span', { style: { color: c.warn } }, String(list.length - dayDone)),
+                  h('span', { style: { color: c.muted } }, '/'),
+                  h('span', { style: { color: c.text } }, String(list.length)),
                 ),
               ),
               h('div', { style: s.list },
@@ -438,7 +482,7 @@ window.__ModuleLoader__.load({
                       onChange: function () { toggleTask(task.id); },
                       style: {
                         margin: 0, marginTop: 2, cursor: 'pointer',
-                        accentColor: 'var(--dsw-alias-brand-primary)',
+                        accentColor: c.brand,
                       },
                       'aria-label': t('done'),
                     }),
@@ -516,11 +560,11 @@ window.__ModuleLoader__.load({
               h('div', { style: s.grid }, weekDays.map(renderDay)),
             ),
             h('div', { style: s.legend },
-              h('span', { style: { color: 'var(--dsw-alias-state-success-primary)' } }, t('done')),
+              h('span', { style: { color: c.success } }, t('done')),
               ' · ',
-              h('span', { style: { color: 'var(--dsw-alias-state-warn-primary)' } }, t('undone')),
+              h('span', { style: { color: c.warn } }, t('undone')),
               ' · ',
-              h('span', { style: { color: 'var(--dsw-alias-label-primary)' } }, t('total')),
+              h('span', { style: { color: c.text } }, t('total')),
             ),
             h('div', { style: s.footer },
               h('button', {
