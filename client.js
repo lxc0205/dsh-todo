@@ -1,0 +1,564 @@
+window.__ModuleLoader__.load({
+  id: '@local/weekly-planner',
+  factory(require) {
+    const React = require('react');
+    const h = React.createElement;
+    const NS = 'local.weekly-planner';
+    const PANEL_ID = 'weekly-planner-panel';
+    const STORAGE_KEY = 'dsh.weekly-planner.tasks.v2';
+    const SEED_TASKS = [];
+    const TASKS_JSON_PATH = 'E:\\dsh\\dsh-todo-from-github\\tasks.json';
+
+    const dict = {
+      zh: {
+        panel: '工作日程',
+        title: '工作日程',
+        prev: '上一周',
+        today: '本周',
+        next: '下一周',
+        total: '总量',
+        done: '已完成',
+        undone: '未完成',
+        day0: '周一',
+        day1: '周二',
+        day2: '周三',
+        day3: '周四',
+        day4: '周五',
+        day5: '周六',
+        day6: '周日',
+        noTasks: '暂无任务',
+        addPlaceholder: '添加任务…',
+        pastNoAdd: '已过日期不可新增，可删除已有任务',
+        delete: '删除任务',
+        jsonButton: '打开json',
+        jsonPathTitle: '任务 JSON 文件路径',
+        jsonTip: '点击按钮在本地文件管理器中打开已迁移的任务 JSON 文件。',
+        jsonOpenFailed: '无法自动打开文件管理器，请手动打开：',
+      },
+      en: {
+        panel: 'Work Schedule',
+        title: 'Work Schedule',
+        prev: 'Previous week',
+        today: 'This week',
+        next: 'Next week',
+        total: 'Total',
+        done: 'Completed',
+        undone: 'Open',
+        day0: 'Monday',
+        day1: 'Tuesday',
+        day2: 'Wednesday',
+        day3: 'Thursday',
+        day4: 'Friday',
+        day5: 'Saturday',
+        day6: 'Sunday',
+        noTasks: 'No tasks',
+        addPlaceholder: 'Add a task…',
+        pastNoAdd: 'Past days: adding disabled; existing tasks can be deleted',
+        delete: 'Delete task',
+        jsonButton: 'Open JSON',
+        jsonPathTitle: 'Task JSON path',
+        jsonTip: 'Click the button to open the migrated task JSON file in your local file manager.',
+        jsonOpenFailed: 'Could not open the file manager automatically. Open it manually:',
+      },
+    };
+
+    function uid() {
+      return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+    }
+
+    function dateKey(d) {
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return y + '-' + m + '-' + day;
+    }
+
+    function addDays(d, n) {
+      const x = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+      x.setDate(x.getDate() + n);
+      return x;
+    }
+
+    function startOfWeek(d) {
+      const x = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+      const offset = (x.getDay() + 6) % 7;
+      x.setDate(x.getDate() - offset);
+      return x;
+    }
+
+    function normalizeTasks(data) {
+      if (!Array.isArray(data)) return null;
+      return data
+        .filter(function (x) {
+          return x && typeof x.id === 'string' && typeof x.title === 'string' && typeof x.date === 'string';
+        })
+        .map(function (x) {
+          return {
+            id: x.id,
+            sourceId: typeof x.sourceId === 'string' ? x.sourceId : undefined,
+            lastCopiedTo: typeof x.lastCopiedTo === 'string' ? x.lastCopiedTo : undefined,
+            title: x.title,
+            date: x.date,
+            done: !!x.done,
+            createdAt: typeof x.createdAt === 'number' ? x.createdAt : Date.now(),
+          };
+        });
+    }
+
+    function loadTasks() {
+      const seeded = normalizeTasks(SEED_TASKS) || [];
+      try {
+        if (typeof window === 'undefined' || !window.localStorage) return seeded;
+        const raw = window.localStorage.getItem(STORAGE_KEY);
+        if (!raw) return seeded;
+        const normalized = normalizeTasks(JSON.parse(raw));
+        return normalized || seeded;
+      } catch (_) {
+        return seeded;
+      }
+    }
+
+    function saveTasks(tasks) {
+      try {
+        if (typeof window === 'undefined' || !window.localStorage) return;
+        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
+      } catch (_) {
+        /* Storage may be unavailable; the planner still works for this session. */
+      }
+    }
+
+    return {
+      inject: ['slots', 'locale', 'layout', 'remote', 'remote.session'],
+      apply(ctx) {
+        ctx.effect(function () {
+          return ctx.locale.register(NS, dict);
+        }, 'weekly-planner: dictionaries');
+        const t = ctx.locale.bind(NS);
+
+        function useLocaleTick() {
+          const [, bump] = React.useReducer(function (n) { return n + 1; }, 0);
+          React.useEffect(function () {
+            if (typeof ctx.on !== 'function') return undefined;
+            return ctx.on('locale/change', function () { bump(); });
+          }, []);
+        }
+
+        function PlannerIcon(props) {
+          const s = props.size || 20;
+          return h('svg', {
+            viewBox: '0 0 24 24', width: s, height: s, fill: 'none',
+            stroke: 'currentColor', strokeWidth: 1.8,
+            strokeLinecap: 'round', strokeLinejoin: 'round',
+            'aria-hidden': true, style: { display: 'block' },
+          },
+            h('rect', { x: 3.5, y: 5, width: 17, height: 15, rx: 3 }),
+            h('path', { d: 'M3.5 9.5h17M8 3v4M16 3v4' }),
+            h('path', { d: 'm9 15 2 2 4-4' }),
+          );
+        }
+
+        function PlannerPage() {
+          useLocaleTick();
+          const [tasks, setTasks] = React.useState(loadTasks);
+          const [drafts, setDrafts] = React.useState({});
+          const [weekStart, setWeekStart] = React.useState(function () {
+            return startOfWeek(new Date());
+          });
+          const scrollRef = React.useRef(null);
+
+          React.useEffect(function () {
+            function parseKey(key) {
+              const parts = key.split('-');
+              return new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+            }
+            function rollForward() {
+              const today = dateKey(new Date());
+              setTasks(function (prev) {
+                let next = prev.map(function (x) {
+                  return x.sourceId ? x : Object.assign({}, x, { sourceId: x.id });
+                });
+                let changed = next.some(function (x, i) { return x !== prev[i]; });
+                for (let pass = 0; pass < 400; pass += 1) {
+                  const pending = next.filter(function (x) {
+                    if (x.done || x.date >= today) return false;
+                    const nx = dateKey(addDays(parseKey(x.date), 1));
+                    return nx <= today && x.lastCopiedTo !== nx;
+                  });
+                  if (!pending.length) break;
+                  const seen = {};
+                  next.forEach(function (x) {
+                    seen[(x.sourceId || x.id) + '|' + x.date] = true;
+                  });
+                  let added = false;
+                  pending.forEach(function (x) {
+                    const nextDate = dateKey(addDays(parseKey(x.date), 1));
+                    if (nextDate > today) return;
+                    const key = (x.sourceId || x.id) + '|' + nextDate;
+                    if (!seen[key]) {
+                      seen[key] = true;
+                      x.lastCopiedTo = nextDate;
+                      next = next.concat([{
+                        id: uid(),
+                        sourceId: x.sourceId || x.id,
+                        title: x.title,
+                        date: nextDate,
+                        done: false,
+                        createdAt: Date.now(),
+                      }]);
+                      added = true;
+                    }
+                  });
+                  if (!added) break;
+                  changed = true;
+                }
+                return changed ? next : prev;
+              });
+            }
+            rollForward();
+            const timer = window.setInterval(rollForward, 60 * 1000);
+            return function () { window.clearInterval(timer); };
+          }, []);
+
+          React.useEffect(function () {
+            saveTasks(tasks);
+          }, [tasks]);
+
+          const weekDays = React.useMemo(function () {
+            return Array.from({ length: 7 }, function (_, i) { return addDays(weekStart, i); });
+          }, [weekStart]);
+          const todayKey = dateKey(new Date());
+
+          React.useEffect(function () {
+            const el = scrollRef.current;
+            if (!el || !el.firstChild) return;
+            const cols = el.firstChild.children;
+            let index = -1;
+            for (let i = 0; i < weekDays.length; i += 1) {
+              if (dateKey(weekDays[i]) === todayKey) { index = i; break; }
+            }
+            if (index < 0 || !cols[index]) return;
+            const frame = window.requestAnimationFrame(function () {
+              const col = cols[index];
+              const box = el.getBoundingClientRect();
+              const target = col.getBoundingClientRect();
+              el.scrollLeft += (target.left + target.width / 2) - (box.left + box.width / 2);
+            });
+            return function () { window.cancelAnimationFrame(frame); };
+          }, [weekStart, todayKey]);
+
+          const dayNames = [t('day0'), t('day1'), t('day2'), t('day3'), t('day4'), t('day5'), t('day6')];
+
+          function tasksOf(key) {
+            return tasks
+              .filter(function (x) { return x.date === key; })
+              .sort(function (a, b) { return a.createdAt - b.createdAt; });
+          }
+
+          function addTask(key) {
+            if (key < todayKey) return;
+            const title = (drafts[key] || '').trim();
+            if (!title) return;
+            setTasks(function (prev) {
+              return prev.concat([{ id: uid(), title: title, date: key, done: false, createdAt: Date.now() }]);
+            });
+            setDrafts(function (prev) {
+              const next = Object.assign({}, prev);
+              next[key] = '';
+              return next;
+            });
+          }
+
+          function toggleTask(id) {
+            setTasks(function (prev) {
+              return prev.map(function (x) {
+                return x.id === id ? Object.assign({}, x, { done: !x.done }) : x;
+              });
+            });
+          }
+
+          function removeTask(id) {
+            setTasks(function (prev) {
+              return prev.filter(function (x) { return x.id !== id; });
+            });
+          }
+
+          async function revealJson() {
+            const remote = ctx.remote;
+            const session = remote && remote.session;
+            if (!session || typeof session.openWorkspacePath !== 'function') return;
+            try {
+              await session.openWorkspacePath({ path: TASKS_JSON_PATH, action: 'reveal' });
+            } catch (_) {
+              // Opening the file manager is best-effort; no UI message is shown.
+            }
+          }
+
+          const s = {
+            root: {
+              boxSizing: 'border-box', width: '100%', height: 'auto', minHeight: '100%', overflow: 'auto',
+              display: 'flex', flexDirection: 'column', transform: 'translateY(-32px)',
+              padding: '40px 36px 16px', background: 'var(--dsw-alias-bg-base)',
+              color: 'var(--dsw-alias-label-primary)', fontFamily: 'inherit',
+            },
+            header: {
+              flex: 'none', marginBottom: 20, minHeight: 120,
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              gap: 20, flexWrap: 'wrap',
+            },
+            title: { margin: 0, fontSize: 24, fontWeight: 600 },
+            nav: { display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' },
+            btn: {
+              cursor: 'pointer', padding: '7px 12px', borderRadius: 8, fontSize: 13,
+              border: '1px solid var(--dsw-alias-border-l1)',
+              background: 'var(--dsw-alias-bg-layer-1)',
+              color: 'var(--dsw-alias-label-primary)',
+            },
+            jsonBtn: {
+              cursor: 'pointer', padding: '10px 18px', borderRadius: 8, fontSize: 14,
+              border: 'none',
+              background: '#2563eb',
+              color: '#ffffff', fontWeight: 600,
+            },
+            dayStat: { display: 'flex', gap: 3, fontSize: 12, fontWeight: 600 },
+            legend: {
+              marginBottom: 20, fontSize: 12, textAlign: 'right',
+              color: 'var(--dsw-alias-label-secondary)',
+            },
+            grid: {
+              display: 'grid', gridTemplateColumns: 'repeat(7, minmax(300px, 1fr))',
+              gap: 14, alignItems: 'stretch',
+            },
+            col: {
+              boxSizing: 'border-box', height: 360, minHeight: 360, maxHeight: 360,
+              padding: 12, borderRadius: 12,
+              border: '1px solid var(--dsw-alias-border-l1)',
+              borderTop: '3px solid var(--dsw-alias-border-l2)',
+              background: 'var(--dsw-alias-bg-layer-1)',
+              display: 'flex', flexDirection: 'column', overflow: 'hidden',
+            },
+            colToday: { borderTopColor: '#2563eb' },
+            colHead: {
+              display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between',
+              gap: 6, marginBottom: 10,
+            },
+            dayName: { fontSize: 12, color: 'var(--dsw-alias-label-secondary)' },
+            todayDot: {
+              width: 6, height: 6, borderRadius: '50%', background: '#2563eb',
+              display: 'inline-block', flex: 'none',
+            },
+            dateNum: { fontSize: 16, fontWeight: 600, color: 'var(--dsw-alias-label-primary)' },
+            dayCount: { fontSize: 11, color: 'var(--dsw-alias-label-secondary)' },
+            list: {
+              flex: '1 1 auto', display: 'flex', flexDirection: 'column', gap: 8,
+              minHeight: 0, maxHeight: 240, overflowY: 'auto', paddingRight: 2,
+            },
+            empty: { fontSize: 12, color: 'var(--dsw-alias-label-secondary)', padding: '12px 0' },
+            task: {
+              display: 'flex', alignItems: 'flex-start', gap: 8, padding: '8px',
+              borderRadius: 8, border: '1px solid var(--dsw-alias-border-l1)',
+              background: 'var(--dsw-alias-bg-layer-2)',
+            },
+            taskTitle: { flex: 1, minWidth: 0, fontSize: 13, lineHeight: 1.4, wordBreak: 'break-word' },
+            taskTitleDone: { textDecoration: 'line-through', color: 'var(--dsw-alias-label-secondary)' },
+            badge: {
+              display: 'inline-block', marginTop: 4, padding: '1px 6px', borderRadius: 6,
+              fontSize: 10, border: '1px solid var(--dsw-alias-border-l2)',
+              background: 'var(--dsw-alias-bg-layer-1)',
+              color: 'var(--dsw-alias-state-warn-primary)',
+            },
+            delBtn: {
+              cursor: 'pointer', flex: 'none', width: 26, height: 24, padding: 0,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 6,
+              border: '1px solid var(--dsw-alias-border-l1)',
+              background: 'var(--dsw-alias-bg-layer-1)',
+              color: 'var(--dsw-alias-label-secondary)',
+            },
+            addRow: { display: 'flex', gap: 6, marginTop: 10 },
+            pastHint: {
+              marginTop: 10, fontSize: 11, lineHeight: 1.4,
+              color: 'var(--dsw-alias-label-secondary)',
+            },
+            input: {
+              flex: 1, minWidth: 0, boxSizing: 'border-box', padding: '7px 8px',
+              borderRadius: 7, border: '1px solid var(--dsw-alias-border-l1)',
+              background: 'var(--dsw-alias-bg-layer-2)',
+              color: 'var(--dsw-alias-label-primary)', fontSize: 12, outline: 'none',
+            },
+            addBtn: {
+              cursor: 'pointer', flex: 'none', padding: '0 10px', borderRadius: 7,
+              border: 'none', fontSize: 14, fontWeight: 600,
+              background: 'var(--dsw-alias-brand-primary)', color: 'var(--dsw-alias-bg-base)',
+            },
+            footer: {
+              display: 'flex', alignItems: 'center', justifyContent: 'flex-end',
+              gap: 12, marginTop: 20, flexWrap: 'wrap',
+            },
+            btnPrimary: {
+              cursor: 'pointer', padding: '7px 14px', borderRadius: 8, fontSize: 13,
+              border: 'none', background: 'var(--dsw-alias-brand-primary)',
+              color: 'var(--dsw-alias-bg-base)',
+            },
+          };
+
+          function renderDay(day, i) {
+            const key = dateKey(day);
+            const list = tasksOf(key);
+            const dayDone = list.filter(function (x) { return x.done; }).length;
+            const isToday = key === todayKey;
+            const isPast = key < todayKey;
+            return h('div', {
+              key: key,
+              style: isToday ? Object.assign({}, s.col, s.colToday) : s.col,
+            },
+              h('div', { style: s.colHead },
+                h('div', {},
+                  h('div', { style: { display: 'flex', alignItems: 'center', gap: 6 } },
+                    isToday ? h('span', { style: s.todayDot }) : null,
+                    h('div', { style: s.dayName }, dayNames[i]),
+                  ),
+                  h('div', { style: s.dateNum }, (day.getMonth() + 1) + '/' + day.getDate()),
+                ),
+                h('div', {
+                  style: s.dayStat,
+                  title: t('done') + ' / ' + t('undone') + ' / ' + t('total'),
+                },
+                  h('span', { style: { color: 'var(--dsw-alias-state-success-primary)' } }, String(dayDone)),
+                  h('span', { style: { color: 'var(--dsw-alias-label-secondary)' } }, '/'),
+                  h('span', { style: { color: 'var(--dsw-alias-state-warn-primary)' } }, String(list.length - dayDone)),
+                  h('span', { style: { color: 'var(--dsw-alias-label-secondary)' } }, '/'),
+                  h('span', { style: { color: 'var(--dsw-alias-label-primary)' } }, String(list.length)),
+                ),
+              ),
+              h('div', { style: s.list },
+                list.length === 0 ? h('div', { style: s.empty }, t('noTasks')) : null,
+                list.map(function (task) {
+                  return h('div', { key: task.id, style: s.task },
+                    h('input', {
+                      type: 'checkbox', checked: task.done,
+                      onChange: function () { toggleTask(task.id); },
+                      style: {
+                        margin: 0, marginTop: 2, cursor: 'pointer',
+                        accentColor: 'var(--dsw-alias-brand-primary)',
+                      },
+                      'aria-label': t('done'),
+                    }),
+                    h('div', { style: { flex: 1, minWidth: 0 } },
+                      h('div', {
+                        style: task.done ? Object.assign({}, s.taskTitle, s.taskTitleDone) : s.taskTitle,
+                      }, task.title),
+                    ),
+                    h('button', {
+                      type: 'button', onClick: function () { removeTask(task.id); },
+                      style: s.delBtn, title: t('delete'), 'aria-label': t('delete'),
+                    },
+                      h('svg', {
+                        width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none',
+                        stroke: 'currentColor', strokeWidth: 2,
+                        strokeLinecap: 'round', strokeLinejoin: 'round',
+                        'aria-hidden': 'true',
+                      },
+                        h('path', { d: 'M3 6h18' }),
+                        h('path', { d: 'M8 6V4h8v2' }),
+                        h('path', { d: 'M19 6l-1 14H6L5 6' }),
+                        h('path', { d: 'M10 11v6M14 11v6' }),
+                      ),
+                    ),
+                  );
+                }),
+              ),
+              isPast
+                ? h('div', { style: s.pastHint }, t('pastNoAdd'))
+                : h('div', { style: s.addRow },
+                    h('input', {
+                      type: 'text', value: drafts[key] || '', placeholder: t('addPlaceholder'),
+                      onChange: function (e) {
+                        const value = e.target.value;
+                        setDrafts(function (prev) {
+                          const next = Object.assign({}, prev);
+                          next[key] = value;
+                          return next;
+                        });
+                      },
+                      onKeyDown: function (e) {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          addTask(key);
+                        }
+                      },
+                      style: s.input,
+                    }),
+                    h('button', {
+                      type: 'button', onClick: function () { addTask(key); }, style: s.addBtn,
+                    }, '+'),
+                  ),
+            );
+          }
+
+          return h('div', { className: 'wp-root', style: s.root },
+            h('div', { style: s.header },
+              h('h1', { style: s.title }, t('title')),
+              h('div', { style: s.nav },
+                h('button', {
+                  type: 'button', style: s.btn,
+                  onClick: function () { setWeekStart(addDays(weekStart, -7)); },
+                }, t('prev')),
+                h('button', {
+                  type: 'button', style: s.btn,
+                  onClick: function () { setWeekStart(startOfWeek(new Date())); },
+                }, t('today')),
+                h('button', {
+                  type: 'button', style: s.btn,
+                  onClick: function () { setWeekStart(addDays(weekStart, 7)); },
+                }, t('next')),
+              ),
+            ),
+            h('div', { ref: scrollRef, style: { overflowX: 'auto', paddingBottom: 4, marginBottom: 8 } },
+              h('div', { style: s.grid }, weekDays.map(renderDay)),
+            ),
+            h('div', { style: s.legend },
+              h('span', { style: { color: 'var(--dsw-alias-state-success-primary)' } }, t('done')),
+              ' · ',
+              h('span', { style: { color: 'var(--dsw-alias-state-warn-primary)' } }, t('undone')),
+              ' · ',
+              h('span', { style: { color: 'var(--dsw-alias-label-primary)' } }, t('total')),
+            ),
+            h('div', { style: s.footer },
+              h('button', {
+                type: 'button', style: s.jsonBtn, onClick: revealJson,
+              }, t('jsonButton')),
+            ),
+          );
+        }
+
+        ctx.effect(function () {
+          let active;
+          try {
+            active = ctx.layout && ctx.layout.panelInfo && ctx.layout.panelInfo.getSnapshot
+              ? ctx.layout.panelInfo.getSnapshot().activePanelId
+              : undefined;
+          } catch (_) {
+            active = undefined;
+          }
+          const disposeMain = ctx.slots.inject('main', function () {
+            return ctx.slots.register({
+              name: 'main', key: PANEL_ID, locale: NS,
+            }, PlannerPage);
+          });
+          const disposeEntry = ctx.slots.inject('sidebar.panellist', function () {
+            return ctx.slots.register({
+              name: 'sidebar.panellist', id: PANEL_ID, order: 20, locale: NS,
+              label: function () { return t('panel'); },
+            }, PlannerIcon);
+          });
+          return function () {
+            disposeEntry();
+            disposeMain();
+            if (active === PANEL_ID && ctx.layout && typeof ctx.layout.selectPanel === 'function') {
+              ctx.layout.selectPanel(null);
+            }
+          };
+        }, 'weekly-planner: panel and sidebar entry');
+      },
+    };
+  },
+});

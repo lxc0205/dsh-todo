@@ -1,0 +1,3 @@
+- insert:
+    - id: weekly-planner
+      name: '@local/weekly-planner'

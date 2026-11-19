@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "工作日程",
+    "description": "任务记录工具，未完成任务自动移到当天，支持每日输入与勾选完成。",
+    "detail": "docs/DETAIL.md"
+  }
+}
