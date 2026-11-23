@@ -210,55 +210,43 @@ window.__ModuleLoader__.load({
           }, []);
 
           React.useEffect(function () {
-            function parseKey(key) {
-              const parts = key.split('-');
-              return new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
-            }
-            function rollForward() {
+            function moveOverdueToToday() {
               const today = dateKey(new Date());
               setTasks(function (prev) {
-                let next = prev.map(function (x) {
+                const normalized = prev.map(function (x) {
                   return x.sourceId ? x : Object.assign({}, x, { sourceId: x.id });
                 });
-                let changed = next.some(function (x, i) { return x !== prev[i]; });
-                for (let pass = 0; pass < 400; pass += 1) {
-                  const pending = next.filter(function (x) {
-                    if (x.done || x.date >= today) return false;
-                    const nx = dateKey(addDays(parseKey(x.date), 1));
-                    return nx <= today && x.lastCopiedTo !== nx;
-                  });
-                  if (!pending.length) break;
-                  const seen = {};
-                  next.forEach(function (x) {
-                    seen[(x.sourceId || x.id) + '|' + x.date] = true;
-                  });
-                  let added = false;
-                  pending.forEach(function (x) {
-                    const nextDate = dateKey(addDays(parseKey(x.date), 1));
-                    if (nextDate > today) return;
-                    const key = (x.sourceId || x.id) + '|' + nextDate;
-                    if (!seen[key]) {
-                      seen[key] = true;
-                      x.lastCopiedTo = nextDate;
-                      next = next.concat([{
-                        id: uid(),
-                        sourceId: x.sourceId || x.id,
-                        title: x.title,
-                        date: nextDate,
-                        done: false,
-                        createdAt: Date.now(),
-                      }]);
-                      added = true;
-                    }
-                  });
-                  if (!added) break;
-                  changed = true;
+                const todayBySource = {};
+                normalized.forEach(function (x) {
+                  if (x.date === today) todayBySource[x.sourceId || x.id] = true;
+                });
+                const overdue = normalized.filter(function (x) {
+                  return !x.done && x.date < today;
+                });
+                if (!overdue.length) {
+                  return normalized.some(function (x, i) { return x !== prev[i]; }) ? normalized : prev;
                 }
-                return changed ? next : prev;
+                overdue.sort(function (a, b) { return a.date < b.date ? -1 : 1; });
+                const keep = {};
+                overdue.forEach(function (x) {
+                  keep[x.sourceId || x.id] = x;
+                });
+                const drop = {};
+                overdue.forEach(function (x) {
+                  const source = x.sourceId || x.id;
+                  if (todayBySource[source] || keep[source] !== x) drop[x.id] = true;
+                });
+                const next = normalized.filter(function (x) { return !drop[x.id]; }).map(function (x) {
+                  if (!drop[x.id] && overdue.indexOf(x) >= 0 && keep[x.sourceId || x.id] === x) {
+                    return Object.assign({}, x, { date: today });
+                  }
+                  return x;
+                });
+                return next;
               });
             }
-            rollForward();
-            const timer = window.setInterval(rollForward, 60 * 1000);
+            moveOverdueToToday();
+            const timer = window.setInterval(moveOverdueToToday, 60 * 1000);
             return function () { window.clearInterval(timer); };
           }, []);
 

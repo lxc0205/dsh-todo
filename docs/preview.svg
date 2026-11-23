@@ -54,5 +54,5 @@
     <text x="550" y="166" font-size="11" fill="#8a9099">周日</text>
     <rect x="548" y="176" width="60" height="16" rx="4" fill="#eef2f7"/>
   </g>
-  <text x="24" y="288" font-family="Arial, sans-serif" font-size="11" fill="#9aa0a8">未完成自动顺延 · 勾选完成 · 本周按任务去重统计</text>
+  <text x="24" y="288" font-family="Arial, sans-serif" font-size="11" fill="#9aa0a8">未完成自动移至当天 · 勾选完成 · 本周按任务去重统计</text>
 </svg>
