@@ -59,6 +59,9 @@ window.__ModuleLoader__.load({
         addPlaceholder: '添加任务…',
         pastNoAdd: '已过日期不可新增，可删除已有任务',
         delete: '删除任务',
+        edit: '修改任务',
+        save: '保存',
+        cancel: '取消',
         jsonButton: '打开json',
         jsonPathTitle: '任务 JSON 文件路径',
         jsonTip: '点击按钮在本地文件管理器中打开已迁移的任务 JSON 文件。',
@@ -84,6 +87,9 @@ window.__ModuleLoader__.load({
         addPlaceholder: 'Add a task…',
         pastNoAdd: 'Past days: adding disabled; existing tasks can be deleted',
         delete: 'Delete task',
+        edit: 'Edit task',
+        save: 'Save',
+        cancel: 'Cancel',
         jsonButton: 'Open JSON',
         jsonPathTitle: 'Task JSON path',
         jsonTip: 'Click the button to open the migrated task JSON file in your local file manager.',
@@ -190,6 +196,8 @@ window.__ModuleLoader__.load({
           useLocaleTick();
           const [tasks, setTasks] = React.useState(loadTasks);
           const [drafts, setDrafts] = React.useState({});
+          const [editingId, setEditingId] = React.useState(null);
+          const [editText, setEditText] = React.useState('');
           const [weekStart, setWeekStart] = React.useState(function () {
             return startOfWeek(new Date());
           });
@@ -277,6 +285,33 @@ window.__ModuleLoader__.load({
             return function () { window.cancelAnimationFrame(frame); };
           }, [weekStart, todayKey]);
 
+          React.useEffect(function () {
+            const el = scrollRef.current;
+            if (!el) return undefined;
+            function onWheel(e) {
+              if (e.ctrlKey || e.shiftKey) return;
+              const dx = e.deltaX || 0;
+              const dy = e.deltaY || 0;
+              if (Math.abs(dx) > Math.abs(dy) || !dy) return;
+              let node = e.target && e.target.nodeType === 1 ? e.target : el;
+              while (node && node !== el) {
+                const overflowY = window.getComputedStyle(node).overflowY;
+                if (overflowY === 'auto' || overflowY === 'scroll') {
+                  const max = node.scrollHeight - node.clientHeight;
+                  if (max > 1) {
+                    const canScroll = dy > 0 ? node.scrollTop < max - 1 : node.scrollTop > 1;
+                    if (canScroll) return;
+                  }
+                }
+                node = node.parentElement;
+              }
+              el.scrollLeft += dy;
+              e.preventDefault();
+            }
+            el.addEventListener('wheel', onWheel, { passive: false });
+            return function () { el.removeEventListener('wheel', onWheel); };
+          }, []);
+
           const dayNames = [t('day0'), t('day1'), t('day2'), t('day3'), t('day4'), t('day5'), t('day6')];
 
           function tasksOf(key) {
@@ -311,6 +346,29 @@ window.__ModuleLoader__.load({
             setTasks(function (prev) {
               return prev.filter(function (x) { return x.id !== id; });
             });
+          }
+
+          function startEdit(task) {
+            setEditingId(task.id);
+            setEditText(task.title);
+          }
+
+          function saveEdit() {
+            const title = editText.trim();
+            if (!title) return;
+            const id = editingId;
+            setTasks(function (prev) {
+              return prev.map(function (x) {
+                return x.id === id ? Object.assign({}, x, { title: title }) : x;
+              });
+            });
+            setEditingId(null);
+            setEditText('');
+          }
+
+          function cancelEdit() {
+            setEditingId(null);
+            setEditText('');
           }
 
           async function revealJson() {
@@ -405,6 +463,26 @@ window.__ModuleLoader__.load({
               background: c.surface,
               color: c.muted,
             },
+            editBtn: {
+              cursor: 'pointer', flex: 'none', width: 26, height: 24, padding: 0,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 6,
+              border: '1px solid ' + c.border,
+              background: c.surface,
+              color: c.brand,
+            },
+            miniBtn: {
+              cursor: 'pointer', flex: 'none', width: 26, height: 24, padding: 0,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 6,
+              border: '1px solid ' + c.border,
+              background: c.surface,
+              color: c.text,
+            },
+            editInput: {
+              flex: 1, minWidth: 0, boxSizing: 'border-box', padding: '4px 6px',
+              borderRadius: 6, border: '1px solid ' + c.brand,
+              background: c.surfaceAlt,
+              color: c.text, fontSize: 12, outline: 'none',
+            },
             addRow: { display: 'flex', gap: 6, marginTop: 10 },
             pastHint: {
               marginTop: 10, fontSize: 11, lineHeight: 1.4,
@@ -464,6 +542,7 @@ window.__ModuleLoader__.load({
               h('div', { style: s.list },
                 list.length === 0 ? h('div', { style: s.empty }, t('noTasks')) : null,
                 list.map(function (task) {
+                  const editing = editingId === task.id;
                   return h('div', { key: task.id, style: s.task },
                     h('input', {
                       type: 'checkbox', checked: task.done,
@@ -474,11 +553,61 @@ window.__ModuleLoader__.load({
                       },
                       'aria-label': t('done'),
                     }),
-                    h('div', { style: { flex: 1, minWidth: 0 } },
-                      h('div', {
-                        style: task.done ? Object.assign({}, s.taskTitle, s.taskTitleDone) : s.taskTitle,
-                      }, task.title),
-                    ),
+                    editing
+                      ? h('input', {
+                          type: 'text', value: editText, autoFocus: true,
+                          style: s.editInput,
+                          onChange: function (e) { setEditText(e.target.value); },
+                          onKeyDown: function (e) {
+                            if (e.key === 'Enter') { e.preventDefault(); saveEdit(); }
+                            else if (e.key === 'Escape') { e.preventDefault(); cancelEdit(); }
+                          },
+                          'aria-label': t('edit'),
+                        })
+                      : h('div', { style: { flex: 1, minWidth: 0 } },
+                          h('div', {
+                            style: task.done ? Object.assign({}, s.taskTitle, s.taskTitleDone) : s.taskTitle,
+                          }, task.title),
+                        ),
+                    editing
+                      ? h('button', {
+                          type: 'button', onClick: saveEdit,
+                          style: s.miniBtn, title: t('save'), 'aria-label': t('save'),
+                        },
+                          h('svg', {
+                            width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none',
+                            stroke: 'currentColor', strokeWidth: 2,
+                            strokeLinecap: 'round', strokeLinejoin: 'round',
+                            'aria-hidden': 'true',
+                          }, h('path', { d: 'M20 6 9 17l-5-5' })),
+                        )
+                      : h('button', {
+                          type: 'button', onClick: function () { startEdit(task); },
+                          style: s.editBtn, title: t('edit'), 'aria-label': t('edit'),
+                        },
+                          h('svg', {
+                            width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none',
+                            stroke: 'currentColor', strokeWidth: 2,
+                            strokeLinecap: 'round', strokeLinejoin: 'round',
+                            'aria-hidden': 'true',
+                          },
+                            h('path', { d: 'M12 20h9' }),
+                            h('path', { d: 'M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z' }),
+                          ),
+                        ),
+                    editing
+                      ? h('button', {
+                          type: 'button', onClick: cancelEdit,
+                          style: s.miniBtn, title: t('cancel'), 'aria-label': t('cancel'),
+                        },
+                          h('svg', {
+                            width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none',
+                            stroke: 'currentColor', strokeWidth: 2,
+                            strokeLinecap: 'round', strokeLinejoin: 'round',
+                            'aria-hidden': 'true',
+                          }, h('path', { d: 'M18 6 6 18M6 6l12 12' })),
+                        )
+                      : null,
                     h('button', {
                       type: 'button', onClick: function () { removeTask(task.id); },
                       style: s.delBtn, title: t('delete'), 'aria-label': t('delete'),
